@@ -28,8 +28,9 @@ import warnings
 import shutil
 from pathlib import Path
 from openpyxl import load_workbook
-from typing import Set, Generator, List
+from typing import Set, Generator, List, Tuple
 import time
+import re
 
 # Suppress openpyxl data validation warning
 warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl')
@@ -61,52 +62,71 @@ def find_xlsx_files(directory: str, filename_pattern: str = None) -> Generator[P
         return (f for f in directory_path.rglob("*.xlsx") if f.name.lower() == filename_pattern.lower())
     return directory_path.rglob("*.xlsx")
 
-def extract_text_from_xlsx(xlsx_path: Path, split_words: bool, max_length: int, show_progress: bool = False) -> Set[str]:
-    """Extract all text from cells in an Excel file."""
+def print_progress(word: str, word_count: int):
+    """Print progress with word truncation based on terminal width."""
+    terminal_width = get_terminal_width()
+    # Account for the "Extracting: " prefix and some padding
+    max_word_width = terminal_width - 20
+    truncated_word = truncate_for_display(word, max_word_width)
+    # Clear the line and print with carriage return
+    print(f"\rExtracting: {truncated_word} (Found {word_count} words)", end='', flush=True)
+
+def extract_text_from_xlsx(xlsx_path: Path, split_chars: str, max_length: int, show_progress: bool = False) -> Tuple[Set[str], int]:
+    """Extract text values from an XLSX file."""
     text_values = set()
     word_count = 0
     
     try:
-        # Load the workbook
-        wb = load_workbook(xlsx_path, read_only=True, data_only=True)
+        workbook = load_workbook(xlsx_path, read_only=True, data_only=True)
         
-        # Iterate through all sheets
-        for sheet in wb:
-            for row in sheet.rows:
+        for sheet in workbook:
+            for row in sheet.iter_rows():
                 for cell in row:
-                    if cell.value and isinstance(cell.value, str):
-                        # Clean the text
-                        cleaned_text = cell.value.strip()
-                        if cleaned_text:
-                            if split_words:
-                                # Split on whitespace and add each word
-                                words = cleaned_text.split()
-                                # Only add words that are within the length limit
-                                for word in words:
-                                    if len(word) <= max_length:
-                                        text_values.add(word)
-                                        word_count += 1
-                                        if show_progress:
-                                            print(f"\rExtracting: {truncate_for_display(word, get_terminal_width())}", end='', flush=True)
-                            else:
-                                # Only add the full text if it's within the length limit
-                                if len(cleaned_text) <= max_length:
-                                    text_values.add(cleaned_text)
-                                    word_count += 1
-                                    if show_progress:
-                                        print(f"\rExtracting: {truncate_for_display(cleaned_text, get_terminal_width())}", end='', flush=True)
-    
+                    if cell.value is not None:
+                        # Convert to string and clean
+                        text = str(cell.value).strip()
+                        if not text:
+                            continue
+                            
+                        # Split into words using specified delimiters
+                        words_to_process = []
+                        if split_chars:
+                            # Create a regex pattern that matches any of the split characters
+                            pattern = f"[{re.escape(split_chars)}]+"
+                            words_to_process = re.split(pattern, text)
+                        else:
+                            words_to_process = [text]
+                        
+                        for word in words_to_process:
+                            word = word.strip()
+                            if not word or len(word) > max_length:
+                                continue
+                                
+                            # Clean the word
+                            word = ''.join(c for c in word if c.isprintable() and not c.isspace())
+                            if word and word not in text_values:
+                                text_values.add(word)
+                                word_count += 1
+                                if show_progress:
+                                    print(f"\033[K", end='')  # Clear the line
+                                    print(f"\rExtracting: {truncate_for_display(word, get_terminal_width())}", end='', flush=True)
+        
+        if show_progress:
+            print()  # New line after done with word display
+        
+        workbook.close()
+        return text_values, word_count
+        
     except Exception as e:
         print(f"\nError processing {xlsx_path}: {str(e)}")
-    
-    return text_values, word_count
+        return set(), 0
 
-def process_xlsx_file(xlsx_path: Path, split_words: bool, show_progress: bool, max_length: int) -> Set[str]:
+def process_xlsx_file(xlsx_path: Path, split_chars: str, show_progress: bool, max_length: int) -> Set[str]:
     """Process a single XLSX file and return the extracted text values."""
     print(f"\nProcessing: {xlsx_path}")
     
     # Extract text from the Excel file
-    text_values, word_count = extract_text_from_xlsx(xlsx_path, split_words, max_length, show_progress)
+    text_values, word_count = extract_text_from_xlsx(xlsx_path, split_chars, max_length, show_progress)
     
     if show_progress:
         print()  # New line after done with word display
@@ -119,7 +139,7 @@ def main():
     parser = argparse.ArgumentParser(description='Extract text from XLSX files for password generation.')
     parser.add_argument('-d', '--directory', required=True, help='Directory to scan for XLSX files')
     parser.add_argument('-o', '--output', default='passwords.txt', help='Output file for extracted text (default: passwords.txt)')
-    parser.add_argument('-w', '--split-words', action='store_true', help='Split cell contents on spaces into individual words')
+    parser.add_argument('-s', '--split-chars', default='', help='Characters to split words on (default: no splitting, process whole cell contents. Example: " ;:\'()<>\\"" for space, semicolon, colon, etc.)')
     parser.add_argument('-p', '--progress', action='store_true', help='Show real-time progress of each word being extracted (slower)')
     parser.add_argument('-l', '--max-length', type=int, default=32, help='Maximum length of words to extract (default: 32)')
     parser.add_argument('-f', '--filename', help='Only process files with this exact name (e.g., "Config.xlsx")')
@@ -140,6 +160,8 @@ def main():
     # First pass: collect all words
     print("First pass: Collecting all words...")
     print(f"Maximum word length: {args.max_length} characters")
+    if args.split_chars:
+        print(f"Split characters: {args.split_chars}")
     if args.filename:
         print(f"Only processing files named: {args.filename}")
     if args.progress:
@@ -157,7 +179,7 @@ def main():
     
     # Process each file and collect words
     for xlsx_path in xlsx_files:
-        words = process_xlsx_file(xlsx_path, args.split_words, args.progress, args.max_length)
+        words = process_xlsx_file(xlsx_path, args.split_chars, args.progress, args.max_length)
         all_words.update(words)
         total_files += 1
         total_words += len(words)
@@ -175,6 +197,8 @@ def main():
     print(f"- Total words found: {total_words}")
     print(f"- Unique words written: {len(all_words)}")
     print(f"- Maximum word length: {args.max_length} characters")
+    if args.split_chars:
+        print(f"- Split characters: {args.split_chars}")
     if args.filename:
         print(f"- Filename filter: {args.filename}")
     print(f"- Results written to: {args.output}")
