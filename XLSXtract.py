@@ -101,8 +101,8 @@ def extract_text_from_xlsx(xlsx_path: Path, split_words: bool, max_length: int, 
     
     return text_values, word_count
 
-def process_xlsx_file(xlsx_path: Path, output_file, split_words: bool, show_progress: bool, max_length: int) -> int:
-    """Process a single XLSX file and write its text content to the output file."""
+def process_xlsx_file(xlsx_path: Path, split_words: bool, show_progress: bool, max_length: int) -> Set[str]:
+    """Process a single XLSX file and return the extracted text values."""
     print(f"\nProcessing: {xlsx_path}")
     
     # Extract text from the Excel file
@@ -113,11 +113,7 @@ def process_xlsx_file(xlsx_path: Path, output_file, split_words: bool, show_prog
     else:
         print(f"Found {word_count} words")
     
-    # Write values to output file
-    for text in sorted(text_values):
-        output_file.write(f"{text}\n")
-    
-    return len(text_values)
+    return text_values
 
 def main():
     parser = argparse.ArgumentParser(description='Extract text from XLSX files for password generation.')
@@ -161,7 +157,7 @@ def main():
     
     # Process each file and collect words
     for xlsx_path in xlsx_files:
-        words = process_xlsx_file(xlsx_path, None, args.split_words, args.progress, args.max_length)
+        words = process_xlsx_file(xlsx_path, args.split_words, args.progress, args.max_length)
         all_words.update(words)
         total_files += 1
         total_words += len(words)
