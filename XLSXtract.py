@@ -35,6 +35,15 @@ import re
 # Suppress openpyxl data validation warning
 warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl')
 
+def is_complex_password(word: str) -> bool:
+    """Check if a word meets password complexity requirements."""
+    has_upper = bool(re.search(r'[A-Z]', word))
+    has_lower = bool(re.search(r'[a-z]', word))
+    has_digit = bool(re.search(r'\d', word))
+    # Common password special characters: !@#$%^&*()_+-=[]{}|;:,.<>?/~`
+    has_special = bool(re.search(r'[!@#$%^&*()_+\-=\[\]{}|;:,.<>?/~`]', word))
+    return has_upper and has_lower and has_digit and has_special
+
 def get_terminal_width() -> int:
     """Get the width of the terminal window."""
     try:
@@ -71,10 +80,11 @@ def print_progress(word: str, word_count: int):
     # Clear the line and print with carriage return
     print(f"\rExtracting: {truncated_word} (Found {word_count} words)", end='', flush=True)
 
-def extract_text_from_xlsx(xlsx_path: Path, split_chars: str, max_length: int, show_progress: bool = False) -> Tuple[Set[str], int]:
+def extract_text_from_xlsx(xlsx_path: Path, split_chars: str, max_length: int, show_progress: bool = False, check_complexity: bool = False) -> Tuple[Set[str], int]:
     """Extract text values from an XLSX file."""
     text_values = set()
     word_count = 0
+    skipped_words = 0
     
     try:
         workbook = load_workbook(xlsx_path, read_only=True, data_only=True)
@@ -100,10 +110,17 @@ def extract_text_from_xlsx(xlsx_path: Path, split_chars: str, max_length: int, s
                         for word in words_to_process:
                             word = word.strip()
                             if not word or len(word) > max_length:
+                                skipped_words += 1
                                 continue
                                 
                             # Clean the word
                             word = ''.join(c for c in word if c.isprintable() and not c.isspace())
+                            
+                            # Skip if complexity check fails
+                            if check_complexity and not is_complex_password(word):
+                                skipped_words += 1
+                                continue
+                                
                             if word and word not in text_values:
                                 text_values.add(word)
                                 word_count += 1
@@ -115,34 +132,37 @@ def extract_text_from_xlsx(xlsx_path: Path, split_chars: str, max_length: int, s
             print()  # New line after done with word display
         
         workbook.close()
-        return text_values, word_count
+        return text_values, word_count, skipped_words
         
     except Exception as e:
         print(f"\nError processing {xlsx_path}: {str(e)}")
-        return set(), 0
+        return set(), 0, 0
 
-def process_xlsx_file(xlsx_path: Path, split_chars: str, show_progress: bool, max_length: int) -> Set[str]:
+def process_xlsx_file(xlsx_path: Path, split_chars: str, show_progress: bool, max_length: int, check_complexity: bool) -> Tuple[Set[str], int]:
     """Process a single XLSX file and return the extracted text values."""
     print(f"Processing: {xlsx_path}")
     
     # Extract text from the Excel file
-    text_values, word_count = extract_text_from_xlsx(xlsx_path, split_chars, max_length, show_progress)
+    text_values, word_count, skipped_words = extract_text_from_xlsx(xlsx_path, split_chars, max_length, show_progress, check_complexity)
     
     if show_progress:
         print()  # New line after done with word display
     else:
         print(f"Found {word_count} words")
+        if check_complexity:
+            print(f"Skipped {skipped_words} words that didn't meet complexity requirements")
     
-    return text_values
+    return text_values, skipped_words
 
 def main():
     parser = argparse.ArgumentParser(description='Extract text from XLSX files for password generation.')
     parser.add_argument('-d', '--directory', required=True, help='Directory to scan for XLSX files')
     parser.add_argument('-o', '--output', default='passwords.txt', help='Output file for extracted text (default: passwords.txt)')
-    parser.add_argument('-s', '--split-chars', default='', help='Characters to split words on (default: no splitting, process whole cell contents. Example: " ;:\'()<>\\"\\u201c\\u201d[]" for space, semicolon, colon, quotes, curly quotes, brackets, etc.)')
+    parser.add_argument('-s', '--split-chars', default='', help='Characters to split words on (default: no splitting, process whole cell contents. Example: " ;:\'()<>\\"[]" for space, semicolon, colon, quotes, brackets, etc.)')
     parser.add_argument('-p', '--progress', action='store_true', help='Show real-time progress of each word being extracted (slower)')
     parser.add_argument('-l', '--max-length', type=int, default=32, help='Maximum length of words to extract (default: 32)')
     parser.add_argument('-f', '--filename', help='Only process files with this exact name (e.g., "Config.xlsx")')
+    parser.add_argument('-c', '--complexity', action='store_true', help='Only extract words that meet password complexity requirements (uppercase, lowercase, number, and special character)')
     
     args = parser.parse_args()
     
@@ -154,7 +174,7 @@ def main():
     # Statistics tracking
     total_files = 0
     total_words = 0
-    skipped_words = 0
+    total_skipped = 0
     all_words = set()
     
     # First pass: collect all words
@@ -166,6 +186,8 @@ def main():
         print(f"Only processing files named: {args.filename}")
     if args.progress:
         print("Showing real-time word extraction (this will be slower)")
+    if args.complexity:
+        print("Checking password complexity (requires uppercase, lowercase, number, and special character)")
     xlsx_files = list(find_xlsx_files(args.directory, args.filename))
     
     if not xlsx_files:
@@ -179,10 +201,11 @@ def main():
     
     # Process each file and collect words
     for xlsx_path in xlsx_files:
-        words = process_xlsx_file(xlsx_path, args.split_chars, args.progress, args.max_length)
+        words, skipped = process_xlsx_file(xlsx_path, args.split_chars, args.progress, args.max_length, args.complexity)
         all_words.update(words)
         total_files += 1
         total_words += len(words)
+        total_skipped += skipped
     
     # Write final sorted and unique list
     print("\nWriting final sorted and unique word list...")
@@ -201,6 +224,8 @@ def main():
         print(f"- Split characters: {args.split_chars}")
     if args.filename:
         print(f"- Filename filter: {args.filename}")
+    if args.complexity:
+        print(f"- Words skipped (complexity): {total_skipped}")
     print(f"- Results written to: {args.output}")
     print()  # Extra blank line at end
 
