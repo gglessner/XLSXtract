@@ -36,7 +36,9 @@ This will scan the specified directory and its subdirectories for .xlsx files an
 - `-d, --directory`: Directory to scan for XLSX files (required)
 - `-o, --output`: Output file name (default: passwords.txt)
 - `-w, --split-words`: Split cell contents on spaces into individual words
-- `-p, --progress`: Show real-time progress of word extraction
+- `-p, --progress`: Show real-time progress of each word being extracted (slower)
+- `-l, --max-length`: Maximum length of words to extract (default: 32)
+- `-f, --filename`: Only process files with this exact name (e.g., "Config.xlsx")
 
 Examples:
 
@@ -45,22 +47,40 @@ Examples:
 python XLSXtract.py -d /path/to/directory -o custom_passwords.txt
 ```
 
-2. Split words and show progress:
+2. Split words and show word count (fast):
 ```bash
-python XLSXtract.py -d /path/to/directory -w -p
+python XLSXtract.py -d /path/to/directory -w
 ```
 
-3. All options:
+3. Set maximum word length to 16 characters:
 ```bash
-python XLSXtract.py -d /path/to/directory -o passwords.txt -w -p
+python XLSXtract.py -d /path/to/directory -l 16
+```
+
+4. Process only files named "Config.xlsx":
+```bash
+python XLSXtract.py -d /path/to/directory -f Config.xlsx
+```
+
+5. Show real-time word extraction (slower but shows each word):
+```bash
+python XLSXtract.py -d /path/to/directory -p
+```
+
+6. All options:
+```bash
+python XLSXtract.py -d /path/to/directory -o passwords.txt -w -p -l 24 -f Config.xlsx
 ```
 
 ## Features
 
 - Recursively scans directories for .xlsx files
+- Option to filter files by exact filename
 - Extracts text from all cells in all sheets
 - Option to split cell contents on spaces into individual words
-- Real-time progress display of word extraction
+- Configurable maximum word length (default: 32 characters)
+- Fast processing by default (shows word counts)
+- Optional real-time word display (slower but shows each word)
 - Removes duplicates using a set
 - Final output is sorted alphabetically
 - Handles errors gracefully
@@ -74,9 +94,14 @@ python XLSXtract.py -d /path/to/directory -o passwords.txt -w -p
 - Empty cells and non-text values are ignored
 - Text values are stripped of leading/trailing whitespace
 - When using `-w/--split-words`, each word from a cell becomes a separate entry
+- Words longer than the specified maximum length (default: 32) are skipped
 - Each unique word appears only once in the final output file
+- When using `-f/--filename`, only files with the exact name (case-insensitive) are processed
+- By default, shows word counts for speed; use `-p` to see each word (slower)
 - Statistics are shown at the end of processing:
   - Number of files processed
   - Total words found
   - Number of unique words written
+  - Maximum word length used
+  - Filename filter (if specified)
   - Output file location 
