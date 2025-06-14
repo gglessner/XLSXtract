@@ -123,7 +123,7 @@ def extract_text_from_xlsx(xlsx_path: Path, split_chars: str, max_length: int, s
 
 def process_xlsx_file(xlsx_path: Path, split_chars: str, show_progress: bool, max_length: int) -> Set[str]:
     """Process a single XLSX file and return the extracted text values."""
-    print(f"\nProcessing: {xlsx_path}")
+    print(f"Processing: {xlsx_path}")
     
     # Extract text from the Excel file
     text_values, word_count = extract_text_from_xlsx(xlsx_path, split_chars, max_length, show_progress)
@@ -139,7 +139,7 @@ def main():
     parser = argparse.ArgumentParser(description='Extract text from XLSX files for password generation.')
     parser.add_argument('-d', '--directory', required=True, help='Directory to scan for XLSX files')
     parser.add_argument('-o', '--output', default='passwords.txt', help='Output file for extracted text (default: passwords.txt)')
-    parser.add_argument('-s', '--split-chars', default='', help='Characters to split words on (default: no splitting, process whole cell contents. Example: " ;:\'()<>\\"" for space, semicolon, colon, etc.)')
+    parser.add_argument('-s', '--split-chars', default='', help='Characters to split words on (default: no splitting, process whole cell contents. Example: " ;:\'()<>\\"\\u201c\\u201d[]" for space, semicolon, colon, quotes, curly quotes, brackets, etc.)')
     parser.add_argument('-p', '--progress', action='store_true', help='Show real-time progress of each word being extracted (slower)')
     parser.add_argument('-l', '--max-length', type=int, default=32, help='Maximum length of words to extract (default: 32)')
     parser.add_argument('-f', '--filename', help='Only process files with this exact name (e.g., "Config.xlsx")')
@@ -202,6 +202,7 @@ def main():
     if args.filename:
         print(f"- Filename filter: {args.filename}")
     print(f"- Results written to: {args.output}")
+    print()  # Extra blank line at end
 
 if __name__ == "__main__":
     main() 
